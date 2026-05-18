@@ -94,6 +94,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const setup = detectCrt(candles, ticker)
           if (!setup) return
 
+          // Only alert if C2 is the LAST closed candle and C3 is currently open
+          // C2 must have closed within the last 4H window
+          // This ensures we're alerting for entry on C3 (currently forming)
+          const c2CloseMs    = new Date(setup.c2CloseTime).getTime()
+          const nowMs        = Date.now()
+          const ageMs        = nowMs - c2CloseMs
+          const FOUR_HOURS   = 4 * 60 * 60 * 1000
+          if (ageMs > FOUR_HOURS) return   // C2 not the latest closed candle — skip
+          if (ageMs < 0) return            // C2 hasn't closed yet — skip
+
           setupsFound++
 
           const alreadyAlerted = await wasRecentlyAlerted(setup.symbol, setup.direction)
