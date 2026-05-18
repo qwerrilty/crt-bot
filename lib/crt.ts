@@ -157,7 +157,21 @@ export function buildAlertMessage(s: CrtSetup): string {
   const vol      = s.volume24h >= 1_000_000
     ? `$${(s.volume24h / 1_000_000).toFixed(2)}M`
     : `$${(s.volume24h / 1_000).toFixed(1)}K`
-  const ts       = new Date(s.c1OpenTime).toUTCString().replace(' GMT', ' UTC')
+  // How old is this setup? (candle age from now)
+  const c1Time    = new Date(s.c1OpenTime).getTime()
+  const nowTime   = Date.now()
+  const ageHours  = Math.floor((nowTime - c1Time) / (1000 * 60 * 60))
+  const ageLabel  = ageHours === 0
+    ? '🆕 FRESH (just closed)'
+    : ageHours <= 4
+    ? `🕐 ${ageHours}h ago`
+    : `🕰️ ${ageHours}h ago (historical)`
+
+  const c1TimeStr = new Date(s.c1OpenTime).toUTCString().replace(' GMT', ' UTC')
+  // Convert to PHT (UTC+8)
+  const c1TimePHT = new Date(c1Time + 8 * 60 * 60 * 1000)
+    .toISOString().replace('T', ' ').slice(0, 16) + ' PHT'
+
   const fvgLine  = s.fvgHigh != null && s.fvgLow != null
     ? `⚡ FVG on C1:   \`${fmt(s.fvgLow)} – ${fmt(s.fvgHigh)}\`\n`
     : ''
@@ -169,6 +183,11 @@ export function buildAlertMessage(s: CrtSetup): string {
     `🕯️ *CRT — ${s.symbol}* (Futures)`,
     `${arrow}  ·  4H  ·  ${now}`,
     `📊 [Open on TradingView](${tvLink})`,
+    ``,
+    `━━━ SETUP INFO ━━━`,
+    `⏱️ C3 Closed: ${c1TimeStr}`,
+    `🇵🇭 PHT Time: ${c1TimePHT}`,
+    `${ageLabel}`,
     ``,
     `━━━ CANDLE DATA ━━━`,
     `📌 C1 High:    \`${fmt(s.c1High)}\``,
@@ -186,6 +205,5 @@ export function buildAlertMessage(s: CrtSetup): string {
     `💲 Price:     \`${fmt(s.lastPrice)}\``,
     `${chgEmoji} 24h Chg:  ${s.priceChangePct >= 0 ? '+' : ''}${s.priceChangePct.toFixed(2)}%`,
     `📦 24h Vol:   ${vol}`,
-    `⏱️ C1 Candle: ${ts}`,
   ].filter(l => l !== undefined).join('\n')
 }
