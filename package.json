@@ -1,0 +1,19 @@
+{
+  "name": "crt-bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.0",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@types/node-telegram-bot-api": "^0.64.7",
+    "@vercel/node": "^3.0.0",
+    "typescript": "^5.4.5"
+  }
+}
