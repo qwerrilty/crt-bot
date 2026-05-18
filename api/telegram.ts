@@ -30,7 +30,7 @@ interface TgUpdate {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getOrCreateSettings(chatId: string) {
-  const { data } = await supabase
+  const { data } = await (supabase as any)
     .from('alert_settings')
     .select('*')
     .eq('chat_id', chatId)
@@ -52,13 +52,13 @@ async function handleCommand(chatId: string, text: string) {
     case '/start': {
       const existing = await getOrCreateSettings(chatId)
       if (existing) {
-        await supabase
+        await (supabase as any)
           .from('alert_settings')
           .update({ active: true, updated_at: new Date().toISOString() })
           .eq('chat_id', chatId)
         await reply(chatId, '✅ *CRT alerts re-enabled!*\nUse /settings to see your config.')
       } else {
-        await supabase.from('alert_settings').insert({
+        await (supabase as any).from('alert_settings').insert({
           chat_id:        chatId,
           min_mc_volume:  10000,
           watchlist:      [],
@@ -83,7 +83,7 @@ async function handleCommand(chatId: string, text: string) {
     }
 
     case '/stop': {
-      await supabase
+      await (supabase as any)
         .from('alert_settings')
         .update({ active: false, updated_at: new Date().toISOString() })
         .eq('chat_id', chatId)
@@ -111,7 +111,7 @@ async function handleCommand(chatId: string, text: string) {
 
     case '/bullish': {
       const on = args[0]?.toLowerCase() !== 'off'
-      await supabase
+      await (supabase as any)
         .from('alert_settings')
         .update({ notify_bullish: on, updated_at: new Date().toISOString() })
         .eq('chat_id', chatId)
@@ -121,7 +121,7 @@ async function handleCommand(chatId: string, text: string) {
 
     case '/bearish': {
       const on = args[0]?.toLowerCase() !== 'off'
-      await supabase
+      await (supabase as any)
         .from('alert_settings')
         .update({ notify_bearish: on, updated_at: new Date().toISOString() })
         .eq('chat_id', chatId)
@@ -135,7 +135,7 @@ async function handleCommand(chatId: string, text: string) {
         break
       }
       const symbols = args.map(s => s.toUpperCase())
-      await supabase
+      await (supabase as any)
         .from('alert_settings')
         .update({ watchlist: symbols, updated_at: new Date().toISOString() })
         .eq('chat_id', chatId)
@@ -144,7 +144,7 @@ async function handleCommand(chatId: string, text: string) {
     }
 
     case '/watchall': {
-      await supabase
+      await (supabase as any)
         .from('alert_settings')
         .update({ watchlist: [], updated_at: new Date().toISOString() })
         .eq('chat_id', chatId)
@@ -153,7 +153,7 @@ async function handleCommand(chatId: string, text: string) {
     }
 
     case '/status': {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from('scan_logs')
         .select('*')
         .order('started_at', { ascending: false })
