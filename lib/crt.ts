@@ -91,6 +91,36 @@ export function detectCrt(
   }
 }
 
+
+// ─── Scan ALL past windows (for backtest/testing) ─────────────────────────────
+
+/**
+ * Scans every 3-candle window in the dataset (not just the last one).
+ * Returns all CRT setups found, newest first.
+ */
+export function detectAllCrt(
+  candles: MexcKline[],
+  ticker: MexcTicker,
+): CrtSetup[] {
+  const results: CrtSetup[] = []
+  // Need at least 5 candles per window (2 prior + c1 + c2 + c3)
+  for (let i = 4; i < candles.length; i++) {
+    const window = candles.slice(0, i + 1)
+    const setup  = detectCrt(window, ticker)
+    if (setup) results.push(setup)
+  }
+  // Newest first, deduplicate by c1OpenTime+direction
+  const seen = new Set<string>()
+  return results
+    .reverse()
+    .filter(s => {
+      const key = `${s.c1OpenTime}_${s.direction}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
 // ─── Alert message builder ───────────────────────────────────────────────────
 
 export function buildAlertMessage(s: CrtSetup): string {
@@ -105,9 +135,12 @@ export function buildAlertMessage(s: CrtSetup): string {
     : ''
   const now = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
 
+  const tvLink = `https://www.tradingview.com/chart/?symbol=MEXC:${s.symbol}&interval=240`
+
   return [
-    `🕯️ *CRT — ${s.symbol}*`,
+    `🕯️ *CRT — ${s.symbol}* (Futures)`,
     `${arrow}  ·  4H  ·  ${now}`,
+    `📊 [Open on TradingView](${tvLink})`,
     ``,
     `━━━ CANDLE DATA ━━━`,
     `📌 C1 High:    \`${fmt(s.c1High)}\``,

@@ -1,8 +1,17 @@
 {
   "version": 2,
   "functions": {
-    "api/cron/scan.ts": { "maxDuration": 300 },
-    "api/telegram.ts":  { "maxDuration": 10 },
-    "api/health.ts":    { "maxDuration": 5 }
+    "api/cron/scan.ts": {
+      "maxDuration": 300
+    },
+    "api/telegram.ts": {
+      "maxDuration": 10
+    },
+    "api/health.ts": {
+      "maxDuration": 5
+    },
+    "api/backtest.ts": {
+      "maxDuration": 30
+    }
   }
 }
