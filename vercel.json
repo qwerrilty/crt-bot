@@ -9,9 +9,6 @@
     },
     "api/health.ts": {
       "maxDuration": 5
-    },
-    "api/backtest.ts": {
-      "maxDuration": 30
     }
   }
 }
