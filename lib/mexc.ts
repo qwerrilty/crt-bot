@@ -1,7 +1,5 @@
 import type { MexcTicker, MexcKline } from './types'
 
-// MEXC Futures (perpetual swap) REST API
-// TradingView symbol format: MEXC:BTCUSDT.P
 const FUTURES_BASE = 'https://contract.mexc.com/api/v1'
 
 async function get<T>(path: string, params?: Record<string, string>): Promise<{ success: boolean; code: number; data: T }> {
@@ -11,7 +9,7 @@ async function get<T>(path: string, params?: Record<string, string>): Promise<{ 
     url += '?' + qs
   }
   const res = await (globalThis.fetch as typeof fetch)(url)
-  if (!res.ok) throw new Error(`MEXC Futures ${path} -> ${res.status}`)
+  if (!res.ok) throw new Error(`MEXC ${path} -> ${res.status}`)
   return res.json()
 }
 
@@ -20,8 +18,8 @@ async function get<T>(path: string, params?: Record<string, string>): Promise<{ 
 interface FuturesTicker {
   symbol:       string
   lastPrice:    number
-  riseFallRate: number  // 24h change as decimal e.g. -0.0138 = -1.38%
-  amount24:     number  // 24h volume in USDT
+  riseFallRate: number  // decimal e.g. -0.0138 = -1.38%
+  amount24:     number  // 24h USDT volume
 }
 
 export async function getAllUsdtTickers(): Promise<MexcTicker[]> {
@@ -31,16 +29,15 @@ export async function getAllUsdtTickers(): Promise<MexcTicker[]> {
   return json.data
     .filter(t => t.symbol.endsWith('_USDT'))
     .map(t => ({
-      symbol:             t.symbol.replace('_USDT', 'USDT') + '.P',  // BTC_USDT → BTCUSDT.P
+      symbol:             t.symbol.replace('_USDT', 'USDT') + '.P',
       lastPrice:          String(t.lastPrice),
-      priceChangePercent: String((t.riseFallRate * 100).toFixed(2)),  // -0.0138 → "-1.38"
+      priceChangePercent: String((t.riseFallRate * 100).toFixed(2)),
       quoteVolume:        String(t.amount24),
     }))
 }
 
 // ── Klines ────────────────────────────────────────────────────────────────────
 
-// MEXC futures kline response uses columnar format (separate arrays per field)
 interface FuturesKlineData {
   time:   number[]
   open:   number[]
@@ -52,10 +49,9 @@ interface FuturesKlineData {
 }
 
 export async function get4hKlines(symbol: string, limit = 50): Promise<MexcKline[]> {
-  // Convert BTCUSDT.P → BTC_USDT for the futures API
   const futuresSymbol = symbol
     .replace('.P', '')
-    .replace('USDT', '_USDT')   // BTCUSDT → BTC_USDT
+    .replace('USDT', '_USDT')
 
   const json = await get<FuturesKlineData>('/contract/kline/' + futuresSymbol, {
     interval: 'Hour4',
@@ -66,7 +62,7 @@ export async function get4hKlines(symbol: string, limit = 50): Promise<MexcKline
 
   const d = json.data
   const candles: MexcKline[] = d.time.map((t, i) => ({
-    openTime:    t * 1000,   // API returns Unix seconds → convert to ms
+    openTime:    t * 1000,
     open:        d.open[i],
     high:        d.high[i],
     low:         d.low[i],
