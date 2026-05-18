@@ -32,6 +32,7 @@ export interface CrtSetup {
   c1RangePct: number     // range as % of price
   c1BodyPct: number      // body as % of c1 range
   sweepPct: number       // how far below/above prior swing was swept
+  wickPct: number        // C1 sweep wick size as % of C1 range
   // C2 — consolidation
   c2OverlapPct: number   // % of C1 range covered by C2
   // C3 — signal
