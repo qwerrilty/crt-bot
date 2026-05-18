@@ -4,7 +4,7 @@ export interface MexcTicker {
   symbol: string
   lastPrice: string
   priceChangePercent: string
-  quoteVolume: string   // 24h volume in USDT
+  quoteVolume: string
 }
 
 export interface MexcKline {
@@ -24,27 +24,37 @@ export type Direction = 'BULLISH' | 'BEARISH'
 export interface CrtSetup {
   symbol: string
   direction: Direction
-  // C1 — displacement candle
-  c1OpenTime: string     // ISO
-  c1High: number
-  c1Low: number
-  c1Mid: number
-  c1RangePct: number     // range as % of price
-  c1BodyPct: number      // body as % of c1 range
-  sweepPct: number       // how far below/above prior swing was swept
-  wickPct: number        // C1 sweep wick size as % of C1 range
-  // C2 — consolidation
-  c2OverlapPct: number   // % of C1 range covered by C2
-  // C3 — signal
-  c3Close: number
-  // Optional FVG on C1
+
+  // C1 — Consolidation / Range candle (defines the boundary)
+  c1OpenTime:    string    // ISO
+  c1CloseTime:   string    // ISO
+  c1High:        number
+  c1Low:         number
+  c1Mid:         number
+  c1RangePct:    number    // range as % of price
+  c1BodyPct:     number    // body as % of C1 range
+
+  // C2 — Displacement / Sweep candle (CRT confirmed on C2 close)
+  c2OpenTime:        string   // ISO
+  c2CloseTime:       string   // ISO  ← CRT confirmed at this time
+  c2BodyHigh:        number
+  c2BodyLow:         number
+  sweepPct:          number   // how far wick went beyond C1 high/low
+  wickPct:           number   // sweep wick as % of C2 range
+  c2BodyOverlapPct:  number   // how much of C2 body is inside C1 range
+
+  // C3 = trader's own entry model — bot does not analyze
+  c3Close:       number    // kept for DB compat (= C2 close price)
+
+  // Optional FVG (gap between C2 body and C1 boundary)
   fvgHigh: number | null
-  fvgLow: number | null
-  // Market snapshot at detection time
-  lastPrice: number
+  fvgLow:  number | null
+
+  // Market snapshot
+  lastPrice:      number
   priceChangePct: number
-  volume24h: number
-  detectedAt: string     // ISO
+  volume24h:      number
+  detectedAt:     string
 }
 
 // ─── Supabase rows ────────────────────────────────────────────────────────────
@@ -57,9 +67,9 @@ export interface CrtSetupRow extends CrtSetup {
 
 export interface AlertSettingsRow {
   id: string
-  chat_id: string           // Telegram chat_id (PK from user's perspective)
-  min_mc_volume: number     // 24h vol proxy for MC filter (default 10000)
-  watchlist: string[]       // [] = all coins, else specific symbols
+  chat_id: string
+  min_mc_volume: number
+  watchlist: string[]
   notify_bullish: boolean
   notify_bearish: boolean
   active: boolean
