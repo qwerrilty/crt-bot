@@ -42,16 +42,22 @@ export function detectCrt(
 
   // ── Bearish CRT ───────────────────────────────────────────────────────────
   // C2 upper WICK sweeps above C1 high
-  // C2 BODY closes back below C1 high (body inside C1 range)
-  const bearishWickSweep  = c2.high > c1.high          // wick above C1 high
-  const bearishBodyInside = c2BodyHigh < c1.high        // body closed below C1 high
+  // C2 BODY must close fully inside C1 range:
+  //   - body high below C1 high (didn't accept above)
+  //   - body low above C1 low   (didn't break down either)
+  const bearishWickSweep  = c2.high > c1.high           // wick pierced above C1 high
+  const bearishBodyInside = c2BodyHigh < c1.high         // body closed below C1 high
+                         && c2BodyLow  > c1.low          // body stayed above C1 low
   const bearish = bearishWickSweep && bearishBodyInside
 
   // ── Bullish CRT ───────────────────────────────────────────────────────────
   // C2 lower WICK sweeps below C1 low
-  // C2 BODY closes back above C1 low (body inside C1 range)
-  const bullishWickSweep  = c2.low < c1.low             // wick below C1 low
-  const bullishBodyInside = c2BodyLow > c1.low           // body closed above C1 low
+  // C2 BODY must close fully inside C1 range:
+  //   - body low above C1 low   (didn't accept below)
+  //   - body high below C1 high (didn't break out either)
+  const bullishWickSweep  = c2.low < c1.low              // wick pierced below C1 low
+  const bullishBodyInside = c2BodyLow  > c1.low           // body closed above C1 low
+                         && c2BodyHigh < c1.high          // body stayed below C1 high
   const bullish = bullishWickSweep && bullishBodyInside
 
   if (!bullish && !bearish) return null
