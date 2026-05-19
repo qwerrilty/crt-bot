@@ -1,4 +1,5 @@
 import type { MexcKline, MexcTicker, CrtSetup, Direction } from './types'
+import { validatePd } from './pd'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -9,34 +10,17 @@ function fmt(n: number): string {
   return n.toFixed(8)
 }
 
-const H4 = 4 * 60 * 60 * 1000  // 4 hours in ms
+const H4 = 4 * 60 * 60 * 1000
 
 // ── CRT Detection ─────────────────────────────────────────────────────────────
-/**
- * Candle Range Theory — correct structure:
- *
- *  C1  Range candle    : defines the high/low boundary
- *  C2  Sweep candle    : wick pierces C1 H or L, body closes back INSIDE C1 range
- *                        → CRT confirmed when C2 closes
- *  C3  Entry candle    : trader's own model — bot does NOT analyze
- *
- *  Bearish CRT : C2 upper wick sweeps above C1 high, C2 body closes below C1 high
- *  Bullish CRT : C2 lower wick sweeps below C1 low,  C2 body closes above C1 low
- *
- *  Quality filters:
- *  - C1 range must be > 0.3% of price (no micro candles)
- *  - C2 body must be fully inside C1 range (both high and low)
- *  - Sweep wick must go at least 0.05% beyond C1 (meaningful grab)
- *  - Sweep wick must be at least 15% of C2 range (visible on chart)
- */
 export function detectCrt(
   candles: MexcKline[],
   ticker: MexcTicker,
 ): CrtSetup | null {
-  if (candles.length < 2) return null
+  if (candles.length < 5) return null
 
   const c1 = candles[candles.length - 2]   // range candle
-  const c2 = candles[candles.length - 1]   // sweep candle — CRT confirmed on close
+  const c2 = candles[candles.length - 1]   // sweep candle
 
   const c1Range    = c1.high - c1.low
   const c1Mid      = (c1.high + c1.low) / 2
@@ -48,17 +32,13 @@ export function detectCrt(
   if (c1Range < 0.003 * c1.close) return null
 
   // C2 body must be fully inside C1 range
-  const c2BodyInsideC1 = c2BodyHigh < c1.high && c2BodyLow > c1.low
-  if (!c2BodyInsideC1) return null
+  if (c2BodyHigh >= c1.high || c2BodyLow <= c1.low) return null
 
-  // ── Bearish: C2 upper wick sweeps above C1 high ───────────────────────────
+  // Detect sweep direction
   const bearishSweep = c2.high > c1.high
-  // ── Bullish: C2 lower wick sweeps below C1 low ────────────────────────────
-  const bullishSweep = c2.low < c1.low
-
+  const bullishSweep = c2.low  < c1.low
   if (!bearishSweep && !bullishSweep) return null
 
-  // If both (rare), pick the bigger sweep
   let direction: Direction
   if (bearishSweep && bullishSweep) {
     direction = (c2.high - c1.high) >= (c1.low - c2.low) ? 'BEARISH' : 'BULLISH'
@@ -66,19 +46,22 @@ export function detectCrt(
     direction = bearishSweep ? 'BEARISH' : 'BULLISH'
   }
 
-  // Sweep % — how far wick went beyond C1
-  const sweepPct = direction === 'BEARISH'
+  // Sweep % and wick %
+  const sweepLevel = direction === 'BEARISH' ? c2.high : c2.low
+  const sweepPct   = direction === 'BEARISH'
     ? (c2.high - c1.high) / c1.high * 100
     : (c1.low  - c2.low)  / c1.low  * 100
-
-  // Wick % — sweep wick as % of C2 total range
-  const wickPct = direction === 'BEARISH'
+  const wickPct    = direction === 'BEARISH'
     ? (c2.high - c2BodyHigh) / c2Range * 100
     : (c2BodyLow - c2.low)   / c2Range * 100
 
   // Quality filters
-  if (sweepPct < 0.05) return null   // wick must go meaningfully beyond C1
-  if (wickPct  < 15)   return null   // wick must be visible on chart
+  if (sweepPct < 0.05) return null
+  if (wickPct  < 15)   return null
+
+  // ── PD Array & Liquidity validation ──────────────────────────────────────
+  const pd = validatePd(candles, direction, sweepLevel)
+  if (!pd.valid) return null   // must sweep a meaningful level
 
   // C2 body overlap inside C1
   const overlapHigh      = Math.min(c2BodyHigh, c1.high)
@@ -87,55 +70,45 @@ export function detectCrt(
     ? (overlapHigh - overlapLow) / c1Range * 100
     : 0
 
-  // FVG — gap between C2 body and C1 boundary
+  // FVG between C2 body and C1 boundary
   let fvgHigh: number | null = null
   let fvgLow:  number | null = null
-  if (direction === 'BEARISH') {
-    fvgLow  = c2BodyHigh
-    fvgHigh = c1.high
-  } else {
-    fvgHigh = c2BodyLow
-    fvgLow  = c1.low
-  }
+  if (direction === 'BEARISH') { fvgLow = c2BodyHigh; fvgHigh = c1.high }
+  else                         { fvgHigh = c2BodyLow;  fvgLow  = c1.low  }
 
   return {
     symbol:    ticker.symbol,
     direction,
-    // C1
-    c1OpenTime:  new Date(c1.openTime).toISOString(),
-    c1CloseTime: new Date(c1.openTime + H4).toISOString(),
-    c1High:      c1.high,
-    c1Low:       c1.low,
+    c1OpenTime:      new Date(c1.openTime).toISOString(),
+    c1CloseTime:     new Date(c1.openTime + H4).toISOString(),
+    c1High:          c1.high,
+    c1Low:           c1.low,
     c1Mid,
-    c1RangePct:  c1Range / c1.close * 100,
-    // C2
+    c1RangePct:      c1Range / c1.close * 100,
     c2OpenTime:      new Date(c2.openTime).toISOString(),
-    c2CloseTime:     new Date(c2.openTime + H4).toISOString(),  // CRT confirmed here
+    c2CloseTime:     new Date(c2.openTime + H4).toISOString(),
     c2BodyHigh,
     c2BodyLow,
     sweepPct,
     wickPct,
     c2BodyOverlapPct,
-    // FVG
     fvgHigh,
     fvgLow,
-    // Market
-    lastPrice:      parseFloat(ticker.lastPrice),
-    priceChangePct: parseFloat(ticker.priceChangePercent),
-    volume24h:      parseFloat(ticker.quoteVolume),
-    detectedAt:     new Date().toISOString(),
+    pdReasons:       pd.reasons,   // what was swept
+    lastPrice:       parseFloat(ticker.lastPrice),
+    priceChangePct:  parseFloat(ticker.priceChangePercent),
+    volume24h:       parseFloat(ticker.quoteVolume),
+    detectedAt:      new Date().toISOString(),
   }
 }
 
-// ── Scan all past windows (backtest) ─────────────────────────────────────────
-
+// ── Scan all past windows ─────────────────────────────────────────────────────
 export function detectAllCrt(candles: MexcKline[], ticker: MexcTicker): CrtSetup[] {
   const results: CrtSetup[] = []
   for (let i = 2; i <= candles.length; i++) {
     const setup = detectCrt(candles.slice(0, i), ticker)
     if (setup) results.push(setup)
   }
-  // Newest first, deduplicate by c2OpenTime+direction
   const seen = new Set<string>()
   return results.reverse().filter(s => {
     const key = `${s.c2OpenTime}_${s.direction}`
@@ -146,7 +119,6 @@ export function detectAllCrt(candles: MexcKline[], ticker: MexcTicker): CrtSetup
 }
 
 // ── Alert message ─────────────────────────────────────────────────────────────
-
 export function buildAlertMessage(s: CrtSetup): string {
   const arrow    = s.direction === 'BULLISH' ? '🟢 BULLISH' : '🔴 BEARISH'
   const chgEmoji = s.priceChangePct >= 0 ? '📈' : '📉'
@@ -154,26 +126,28 @@ export function buildAlertMessage(s: CrtSetup): string {
     ? `$${(s.volume24h / 1_000_000).toFixed(2)}M`
     : `$${(s.volume24h / 1_000).toFixed(1)}K`
 
-  // Convert ISO UTC → PHT (UTC+8)
   const toPHT = (iso: string) => {
     const d = new Date(new Date(iso).getTime() + 8 * 60 * 60 * 1000)
     return d.toISOString().slice(0, 16).replace('T', ' ') + ' PHT'
   }
   const toUTC = (iso: string) => iso.slice(0, 16).replace('T', ' ') + ' UTC'
 
-  // Age of setup based on C2 close time
   const ageMs    = Date.now() - new Date(s.c2CloseTime).getTime()
   const ageHours = Math.floor(ageMs / (1000 * 60 * 60))
   const ageMins  = Math.floor((ageMs % (1000 * 60 * 60)) / (1000 * 60))
   const ageLabel = ageHours === 0
     ? `🆕 FRESH — confirmed ${ageMins}min ago`
-    : ageHours <= 4
-    ? `🕐 Confirmed ${ageHours}h ${ageMins}m ago`
-    : `🕰️ Historical — ${ageHours}h ago`
+    : `🕐 Confirmed ${ageHours}h ${ageMins}m ago`
 
   const fvgLine = s.fvgHigh != null && s.fvgLow != null
     ? `⚡ FVG Zone:   \`${fmt(s.fvgLow)} – ${fmt(s.fvgHigh)}\``
     : null
+
+  // PD Arrays / Liquidity confluence
+  const pdLines = (s.pdReasons ?? []).map(r => `   • ${r}`)
+  const pdBlock = pdLines.length > 0
+    ? [``, `━━━ PD ARRAY / LIQUIDITY ━━━`, ...pdLines]
+    : []
 
   const tvLink = `https://www.tradingview.com/chart/?symbol=MEXC:${s.symbol}&interval=240`
 
@@ -199,6 +173,7 @@ export function buildAlertMessage(s: CrtSetup): string {
     `🪶 Wick:      ${s.wickPct.toFixed(0)}% of C2 range`,
     `🗜️ Body in C1: ${s.c2BodyOverlapPct.toFixed(0)}%`,
     fvgLine,
+    ...pdBlock,
     ``,
     `━━━ MARKET ━━━`,
     `💲 Price:     \`${fmt(s.lastPrice)}\``,

@@ -38,6 +38,9 @@ export interface CrtSetup {
   wickPct:         number   // sweep wick as % of C2 range
   c2BodyOverlapPct: number  // how much C2 body is inside C1 range
 
+  // PD Arrays & Liquidity confirmation
+  pdReasons: string[]   // what was swept to confirm the CRT
+
   // FVG zone (optional)
   fvgHigh: number | null
   fvgLow:  number | null
