@@ -48,7 +48,7 @@ export function detectCrt(
 
   // ── Rule 1: C1 must be a STRONG range candle ───────────────────────────────
   // Range > 0.5% of price (not a doji or micro candle)
-  if (c1Range < 0.005 * c1.close) return null
+  if (c1Range < 0.003 * c1.close) return null   // > 0.3% range
   // C1 body must be at least 30% of its range (not a spinning top)
   const c1BodyPct = Math.abs(c1.close - c1.open) / c1Range
   if (c1BodyPct < 0.30) return null
@@ -78,9 +78,9 @@ export function detectCrt(
 
   // ── Rule 3: Sweep must be SIGNIFICANT ─────────────────────────────────────
   // Wick must be at least 25% of C2 range (visible rejection)
-  if (wickPct  < 25)   return null
+  if (wickPct  < 20)   return null   // wick >= 20% of C2
   // Wick must go at least 0.1% beyond C1 (meaningful grab)
-  if (sweepPct < 0.10) return null
+  if (sweepPct < 0.05) return null   // > 0.05% beyond C1
 
   // ── Rule 4: C2 body must close in OPPOSITE half of C1 (strong rejection) ──
   // Bearish CRT: swept above, so body must close in LOWER half of C1
@@ -113,22 +113,20 @@ export function detectCrt(
 
     if (direction === 'BEARISH') {
       // For bearish CRT, we want a downtrend or distribution (lower highs)
-      if (secondHighAvg > firstHighAvg * 1.002) return null  // still making higher highs — skip
+      // Allow 0.5% tolerance to avoid filtering ranging markets too aggressively
+      if (secondHighAvg > firstHighAvg * 1.005) return null
     }
     if (direction === 'BULLISH') {
       // For bullish CRT, we want an uptrend or accumulation (higher lows)
-      if (secondLowAvg < firstLowAvg * 0.998) return null   // still making lower lows — skip
+      if (secondLowAvg < firstLowAvg * 0.995) return null
     }
   }
 
-  // ── Rule 7: PD Array / Liquidity validation ───────────────────────────────
-  const pd = validatePd(candles, direction, sweepLevel)
-  if (!pd.valid) return null
-
-  // ── Rule 8: POI (Point of Interest) validation ─────────────────────────────
-  // Must ALSO be at or near a valid POI (breaker, mitigation, rejection, propulsion, premium/discount)
+  // ── Rule 7 & 8: PD Array / Liquidity + POI validation ────────────────────
+  // Must hit AT LEAST ONE valid PD array/liquidity OR one valid POI
+  const pd  = validatePd(candles, direction, sweepLevel)
   const poi = validatePoi(candles, direction, sweepLevel)
-  if (!poi.valid) return null
+  if (!pd.valid && !poi.valid) return null
 
   // ── Compute remaining metrics ──────────────────────────────────────────────
   const overlapHigh      = Math.min(c2BodyHigh, c1.high)
