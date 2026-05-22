@@ -51,7 +51,7 @@ export function detectCrt(
   if (c1Range < 0.003 * c1.close) return null   // > 0.3% range
   // C1 body must be at least 30% of its range (not a spinning top)
   const c1BodyPct = Math.abs(c1.close - c1.open) / c1Range
-  // if (c1BodyPct < 0.30) return null  // DISABLED FOR TEST
+  if (c1BodyPct < 0.30) return null
 
   // ── Rule 2: C2 body must be FULLY inside C1 range ─────────────────────────
   if (c2BodyHigh >= c1.high || c2BodyLow <= c1.low) return null
@@ -78,20 +78,20 @@ export function detectCrt(
 
   // ── Rule 3: Sweep must be SIGNIFICANT ─────────────────────────────────────
   // Wick must be at least 25% of C2 range (visible rejection)
-  // if (wickPct  < 20) return null  // DISABLED FOR TEST
+  if (wickPct  < 20)   return null
   // Wick must go at least 0.1% beyond C1 (meaningful grab)
-  // if (sweepPct < 0.05) return null  // DISABLED FOR TEST
+  if (sweepPct < 0.05) return null
 
   // ── Rule 4: C2 body must close in OPPOSITE half of C1 (strong rejection) ──
   // Bearish CRT: swept above, so body must close in LOWER half of C1
   if (direction === 'BEARISH') {
     const c2BodyMid = (c2BodyHigh + c2BodyLow) / 2
-    // if (c2BodyMid >= c1Mid) return null  // DISABLED FOR TEST
+    if (c2BodyMid >= c1Mid) return null   // body too high — weak rejection
   }
   // Bullish CRT: swept below, so body must close in UPPER half of C1
   if (direction === 'BULLISH') {
     const c2BodyMid = (c2BodyHigh + c2BodyLow) / 2
-    // if (c2BodyMid <= c1Mid) return null  // DISABLED FOR TEST
+    if (c2BodyMid <= c1Mid) return null   // body too low — weak rejection
   }
 
   // Rule 5: C2 rejection direction (soft — shown in alert)
