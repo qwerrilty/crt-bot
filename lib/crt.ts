@@ -82,17 +82,14 @@ export function detectCrt(
   // Wick must go at least 0.1% beyond C1 (meaningful grab)
   if (sweepPct < 0.05) return null
 
-  // ── Rule 4: C2 body must close in OPPOSITE half of C1 (strong rejection) ──
-  // Bearish CRT: swept above, so body must close in LOWER half of C1
-  if (direction === 'BEARISH') {
-    const c2BodyMid = (c2BodyHigh + c2BodyLow) / 2
-    if (c2BodyMid >= c1Mid) return null   // body too high — weak rejection
-  }
-  // Bullish CRT: swept below, so body must close in UPPER half of C1
-  if (direction === 'BULLISH') {
-    const c2BodyMid = (c2BodyHigh + c2BodyLow) / 2
-    if (c2BodyMid <= c1Mid) return null   // body too low — weak rejection
-  }
+  // ── Rule 4: C2 body must show SOME rejection from the sweep ──────────────
+  // Bearish CRT: C2 body mid must be below the upper 2/3 of C1
+  // Bullish CRT: C2 body mid must be above the lower 2/3 of C1
+  const c2BodyMid  = (c2BodyHigh + c2BodyLow) / 2
+  const c1OneThird = c1.low + c1Range / 3
+  const c1TwoThird = c1.low + (c1Range * 2 / 3)
+  if (direction === 'BEARISH' && c2BodyMid > c1TwoThird) return null  // body too high
+  if (direction === 'BULLISH' && c2BodyMid < c1OneThird) return null  // body too low
 
   // Rule 5: C2 rejection direction (soft — shown in alert)
   const c2Bearish = c2.close < c2.open
@@ -116,7 +113,7 @@ export function detectCrt(
   // Must hit AT LEAST ONE valid PD array/liquidity OR one valid POI
   const pd  = validatePd(candles, direction, sweepLevel)
   const poi = validatePoi(candles, direction, sweepLevel)
-  // if (!pd.valid && !poi.valid) return null  // DISABLED FOR TEST
+  if (!pd.valid && !poi.valid) return null
 
   // ── Compute remaining metrics ──────────────────────────────────────────────
   const overlapHigh      = Math.min(c2BodyHigh, c1.high)
