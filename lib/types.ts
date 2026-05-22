@@ -39,7 +39,9 @@ export interface CrtSetup {
   c2BodyOverlapPct: number  // how much C2 body is inside C1 range
 
   // PD Arrays & Liquidity confirmation
-  pdReasons: string[]   // what was swept to confirm the CRT
+  pdReasons:   string[]   // what was swept to confirm the CRT
+  htfBias:     string    // BULLISH / BEARISH / RANGING
+  c2Rejected:  boolean   // C2 closed in rejection direction
 
   // FVG zone (optional)
   fvgHigh: number | null

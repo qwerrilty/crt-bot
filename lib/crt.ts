@@ -94,32 +94,22 @@ export function detectCrt(
     if (c2BodyMid <= c1Mid) return null   // body too low — weak rejection
   }
 
-  // ── Rule 5: C2 must be a REJECTION candle ─────────────────────────────────
-  // Bearish CRT: C2 should close bearish (confirms rejection of the high)
-  if (direction === 'BEARISH' && c2.close > c2.open) return null
-  // Bullish CRT: C2 should close bullish (confirms rejection of the low)
-  if (direction === 'BULLISH' && c2.close < c2.open) return null
+  // Rule 5: C2 rejection direction (soft — shown in alert)
+  const c2Bearish = c2.close < c2.open
+  const c2Bullish = c2.close > c2.open
 
-  // ── Rule 6: HTF BIAS — check last 10 candles for trend alignment ──────────
-  const htf = candles.slice(-12, -2)   // 10 candles before C1
+  // HTF bias — soft check only, shown in alert but not used to filter
+  const htf = candles.slice(-12, -2)
+  let htfBias = 'RANGING'
   if (htf.length >= 6) {
     const firstHalf  = htf.slice(0, Math.floor(htf.length / 2))
     const secondHalf = htf.slice(Math.floor(htf.length / 2))
-
     const firstHighAvg  = firstHalf.reduce((s, c) => s + c.high, 0) / firstHalf.length
     const secondHighAvg = secondHalf.reduce((s, c) => s + c.high, 0) / secondHalf.length
     const firstLowAvg   = firstHalf.reduce((s, c) => s + c.low, 0) / firstHalf.length
     const secondLowAvg  = secondHalf.reduce((s, c) => s + c.low, 0) / secondHalf.length
-
-    if (direction === 'BEARISH') {
-      // For bearish CRT, we want a downtrend or distribution (lower highs)
-      // Allow 0.5% tolerance to avoid filtering ranging markets too aggressively
-      if (secondHighAvg > firstHighAvg * 1.005) return null
-    }
-    if (direction === 'BULLISH') {
-      // For bullish CRT, we want an uptrend or accumulation (higher lows)
-      if (secondLowAvg < firstLowAvg * 0.995) return null
-    }
+    if (secondHighAvg < firstHighAvg && secondLowAvg < firstLowAvg) htfBias = 'BEARISH'
+    else if (secondHighAvg > firstHighAvg && secondLowAvg > firstLowAvg) htfBias = 'BULLISH'
   }
 
   // ── Rule 7 & 8: PD Array / Liquidity + POI validation ────────────────────
@@ -159,6 +149,8 @@ export function detectCrt(
     fvgHigh,
     fvgLow,
     pdReasons:       [...pd.reasons, ...poi.reasons],
+    htfBias,
+    c2Rejected:      direction === 'BEARISH' ? c2Bearish : c2Bullish,
     lastPrice:       parseFloat(ticker.lastPrice),
     priceChangePct:  parseFloat(ticker.priceChangePercent),
     volume24h:       parseFloat(ticker.quoteVolume),
@@ -207,6 +199,8 @@ export function buildAlertMessage(s: CrtSetup): string {
     ? `⚡ FVG Zone:   \`${fmt(s.fvgLow)} – ${fmt(s.fvgHigh)}\``
     : null
 
+  const htfEmoji   = s.htfBias === 'BULLISH' ? '🟢' : s.htfBias === 'BEARISH' ? '🔴' : '🟡'
+  const rejEmoji   = s.c2Rejected ? '✅' : '⚠️'
   const pdLines = (s.pdReasons ?? []).map(r => `   • ${r}`)
   const pdBlock = pdLines.length > 0
     ? [``, `━━━ CONFLUENCE ━━━`, ...pdLines]
@@ -236,6 +230,8 @@ export function buildAlertMessage(s: CrtSetup): string {
     `🪶 Wick:      ${s.wickPct.toFixed(0)}% of C2`,
     `🗜️ Body in C1: ${s.c2BodyOverlapPct.toFixed(0)}%`,
     fvgLine,
+    `📊 HTF Bias:   ${htfEmoji} ${s.htfBias}`,
+    `🕯️ C2 Closed:  ${rejEmoji} ${s.c2Rejected ? 'Confirmed rejection' : 'Weak rejection (caution)'}`,
     ...pdBlock,
     ``,
     `━━━ MARKET ━━━`,
