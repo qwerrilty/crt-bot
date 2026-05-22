@@ -11,25 +11,20 @@ function fmt(n: number): string {
 const H4 = 4 * 60 * 60 * 1000
 
 /**
- * STRICT CRT DETECTION
- * ====================
- * C1 = Range candle    — defines the high/low boundary
- * C2 = Sweep candle    — wick sweeps C1 H/L, body closes back inside C1
- * C3 = Entry candle    — trader's own model (bot does not analyze)
+ * CRT Detection — Core Rules:
  *
- * STRICT RULES ADDED:
- *  1. C1 must be a STRONG range candle (range > 0.5% AND body > 30% of range)
- *  2. C2 sweep wick must be SIGNIFICANT (>= 25% of C2 range AND sweep >= 0.1%)
- *  3. C2 body must close in the OPPOSITE half of C1 (strong rejection)
- *     - Bearish CRT: C2 body must close in the LOWER half of C1
- *     - Bullish CRT: C2 body must close in the UPPER half of C1
- *  4. C2 must be a REJECTION candle — close strongly away from sweep
- *     - Bearish: C2 must close bearish (close < open) OR close below C1 mid
- *     - Bullish: C2 must close bullish (close > open) OR close above C1 mid
- *  5. Higher timeframe bias — C2 close must align with HTF structure
- *     - Bearish CRT: recent 10-candle trend must show lower highs (downtrend)
- *     - Bullish CRT: recent 10-candle trend must show higher lows (uptrend)
- *  6. Must sweep a valid PD array or liquidity pool (from pd.ts)
+ *  C1 = Range candle    — defines the high/low boundary (wick to wick)
+ *  C2 = Sweep candle    — wick sweeps C1's wick high or low
+ *                         body closes back INSIDE C1's full range (wick to wick)
+ *  C3 = Entry candle    — trader's own model
+ *
+ * Filters:
+ *  1. C1 range > 0.3% (no micro candles)
+ *  2. C2 wick sweeps beyond C1 wick high/low
+ *  3. C2 body closes fully inside C1 range (wick to wick)
+ *  4. Sweep wick >= 20% of C2 range (visible on chart)
+ *  5. Sweep >= 0.05% beyond C1 (meaningful grab)
+ *  6. Must hit a valid PD array OR POI
  */
 export function detectCrt(
   candles: MexcKline[],
@@ -46,19 +41,15 @@ export function detectCrt(
   const c2BodyLow  = Math.min(c2.open, c2.close)
   const c2Range    = (c2.high - c2.low) || 1
 
-  // ── Rule 1: C1 must be a STRONG range candle ───────────────────────────────
-  // Range > 0.5% of price (not a doji or micro candle)
-  if (c1Range < 0.003 * c1.close) return null   // > 0.3% range
-  // C1 body must be at least 30% of its range (not a spinning top)
-  const c1BodyPct = Math.abs(c1.close - c1.open) / c1Range
-  if (c1BodyPct < 0.30) return null
+  // Rule 1: C1 must have meaningful range > 0.3%
+  if (c1Range < 0.003 * c1.close) return null
 
-  // ── Rule 2: C2 body must be FULLY inside C1 range ─────────────────────────
+  // Rule 2: C2 body must be fully inside C1 range (wick to wick)
   if (c2BodyHigh >= c1.high || c2BodyLow <= c1.low) return null
 
-  // ── Detect sweep direction ─────────────────────────────────────────────────
-  const bearishSweep = c2.high > c1.high
-  const bullishSweep = c2.low  < c1.low
+  // Rule 3: Detect wick sweep
+  const bearishSweep = c2.high > c1.high   // C2 wick above C1 wick high
+  const bullishSweep = c2.low  < c1.low    // C2 wick below C1 wick low
   if (!bearishSweep && !bullishSweep) return null
 
   let direction: Direction
@@ -76,26 +67,18 @@ export function detectCrt(
     ? (c2.high - c2BodyHigh) / c2Range * 100
     : (c2BodyLow - c2.low)   / c2Range * 100
 
-  // ── Rule 3: Sweep must be SIGNIFICANT ─────────────────────────────────────
-  // Wick must be at least 25% of C2 range (visible rejection)
+  // Rule 4: Sweep wick must be visible (>= 20% of C2 range)
   if (wickPct  < 20)   return null
-  // Wick must go at least 0.1% beyond C1 (meaningful grab)
+
+  // Rule 5: Sweep must go meaningfully beyond C1 (>= 0.05%)
   if (sweepPct < 0.05) return null
 
-  // ── Rule 4: C2 body must show SOME rejection from the sweep ──────────────
-  // Bearish CRT: C2 body mid must be below the upper 2/3 of C1
-  // Bullish CRT: C2 body mid must be above the lower 2/3 of C1
-  const c2BodyMid  = (c2BodyHigh + c2BodyLow) / 2
-  const c1OneThird = c1.low + c1Range / 3
-  const c1TwoThird = c1.low + (c1Range * 2 / 3)
-  if (direction === 'BEARISH' && c2BodyMid > c1TwoThird) return null  // body too high
-  if (direction === 'BULLISH' && c2BodyMid < c1OneThird) return null  // body too low
+  // Rule 6: Must hit valid PD array OR POI
+  const pd  = validatePd(candles, direction, sweepLevel)
+  const poi = validatePoi(candles, direction, sweepLevel)
+  if (!pd.valid && !poi.valid) return null
 
-  // Rule 5: C2 rejection direction (soft — shown in alert)
-  const c2Bearish = c2.close < c2.open
-  const c2Bullish = c2.close > c2.open
-
-  // HTF bias — soft check only, shown in alert but not used to filter
+  // HTF bias (info only — not a hard filter)
   const htf = candles.slice(-12, -2)
   let htfBias = 'RANGING'
   if (htf.length >= 6) {
@@ -109,19 +92,17 @@ export function detectCrt(
     else if (secondHighAvg > firstHighAvg && secondLowAvg > firstLowAvg) htfBias = 'BULLISH'
   }
 
-  // ── Rule 7 & 8: PD Array / Liquidity + POI validation ────────────────────
-  // Must hit AT LEAST ONE valid PD array/liquidity OR one valid POI
-  const pd  = validatePd(candles, direction, sweepLevel)
-  const poi = validatePoi(candles, direction, sweepLevel)
-  if (!pd.valid && !poi.valid) return null
+  // C2 rejection info (not a hard filter)
+  const c2Rejected = direction === 'BEARISH' ? c2.close < c2.open : c2.close > c2.open
 
-  // ── Compute remaining metrics ──────────────────────────────────────────────
+  // C2 body overlap inside C1
   const overlapHigh      = Math.min(c2BodyHigh, c1.high)
   const overlapLow       = Math.max(c2BodyLow,  c1.low)
   const c2BodyOverlapPct = overlapHigh > overlapLow
     ? (overlapHigh - overlapLow) / c1Range * 100
     : 0
 
+  // FVG between C2 body and C1 wick boundary
   let fvgHigh: number | null = null
   let fvgLow:  number | null = null
   if (direction === 'BEARISH') { fvgLow = c2BodyHigh; fvgHigh = c1.high }
@@ -145,9 +126,9 @@ export function detectCrt(
     c2BodyOverlapPct,
     fvgHigh,
     fvgLow,
-    pdReasons:       [...pd.reasons, ...poi.reasons],
+    pdReasons:   [...pd.reasons, ...poi.reasons],
     htfBias,
-    c2Rejected:      direction === 'BEARISH' ? c2Bearish : c2Bullish,
+    c2Rejected,
     lastPrice:       parseFloat(ticker.lastPrice),
     priceChangePct:  parseFloat(ticker.priceChangePercent),
     volume24h:       parseFloat(ticker.quoteVolume),
@@ -155,7 +136,7 @@ export function detectCrt(
   }
 }
 
-// ── Scan all past windows (backtest) ─────────────────────────────────────────
+// ── Scan all past windows ─────────────────────────────────────────────────────
 export function detectAllCrt(candles: MexcKline[], ticker: MexcTicker): CrtSetup[] {
   const results: CrtSetup[] = []
   for (let i = 2; i <= candles.length; i++) {
@@ -192,14 +173,15 @@ export function buildAlertMessage(s: CrtSetup): string {
     ? `🆕 FRESH — confirmed ${ageMins}min ago`
     : `🕐 Confirmed ${ageHours}h ${ageMins}m ago`
 
-  const fvgLine = s.fvgHigh != null && s.fvgLow != null
+  const fvgLine  = s.fvgHigh != null && s.fvgLow != null
     ? `⚡ FVG Zone:   \`${fmt(s.fvgLow)} – ${fmt(s.fvgHigh)}\``
     : null
 
-  const htfEmoji   = s.htfBias === 'BULLISH' ? '🟢' : s.htfBias === 'BEARISH' ? '🔴' : '🟡'
-  const rejEmoji   = s.c2Rejected ? '✅' : '⚠️'
-  const pdLines = (s.pdReasons ?? []).map(r => `   • ${r}`)
-  const pdBlock = pdLines.length > 0
+  const htfEmoji = s.htfBias === 'BULLISH' ? '🟢' : s.htfBias === 'BEARISH' ? '🔴' : '🟡'
+  const rejEmoji = s.c2Rejected ? '✅' : '⚠️'
+
+  const pdLines  = (s.pdReasons ?? []).map(r => `   • ${r}`)
+  const pdBlock  = pdLines.length > 0
     ? [``, `━━━ CONFLUENCE ━━━`, ...pdLines]
     : []
 
@@ -217,18 +199,19 @@ export function buildAlertMessage(s: CrtSetup): string {
     ageLabel,
     ``,
     `━━━ C1 RANGE ━━━`,
-    `📌 High:      \`${fmt(s.c1High)}\``,
-    `📌 Low:       \`${fmt(s.c1Low)}\``,
+    `📌 High:      \`${fmt(s.c1High)}\`  (wick)`,
+    `📌 Low:       \`${fmt(s.c1Low)}\`  (wick)`,
     `📍 Mid:       \`${fmt(s.c1Mid)}\``,
     `📏 Range:     ${s.c1RangePct.toFixed(2)}%`,
     ``,
     `━━━ C2 SWEEP ━━━`,
+    `💧 Swept:     ${s.direction === 'BEARISH' ? 'above C1 wick high' : 'below C1 wick low'}`,
     `💧 Sweep:     ${s.sweepPct.toFixed(3)}% beyond C1`,
-    `🪶 Wick:      ${s.wickPct.toFixed(0)}% of C2`,
+    `🪶 Wick:      ${s.wickPct.toFixed(0)}% of C2 range`,
     `🗜️ Body in C1: ${s.c2BodyOverlapPct.toFixed(0)}%`,
     fvgLine,
-    `📊 HTF Bias:   ${htfEmoji} ${s.htfBias}`,
-    `🕯️ C2 Closed:  ${rejEmoji} ${s.c2Rejected ? 'Confirmed rejection' : 'Weak rejection (caution)'}`,
+    `📊 HTF Bias:  ${htfEmoji} ${s.htfBias}`,
+    `🕯️ C2 Close:  ${rejEmoji} ${s.c2Rejected ? 'Confirmed rejection' : 'Weak (caution)'}`,
     ...pdBlock,
     ``,
     `━━━ MARKET ━━━`,
