@@ -39,7 +39,10 @@ export interface CrtSetup {
   c2BodyOverlapPct: number  // how much C2 body is inside C1 range
 
   // PD Arrays & Liquidity confirmation
-  pdReasons:   string[]   // what was swept to confirm the CRT
+  pdReasons:   string[]   // PD arrays and POI confluence
+  confReasons: string[]   // additional confluences
+  confScore:   number    // 0-10 confluence score
+  session:     string    // trading session
   htfBias:     string    // BULLISH / BEARISH / RANGING
   c2Rejected:  boolean   // C2 closed in rejection direction
 

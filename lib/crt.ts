@@ -1,5 +1,6 @@
 import type { MexcKline, MexcTicker, CrtSetup, Direction } from './types'
 import { validatePd, validatePoi } from './pd'
+import { getConfluence } from './confluence'
 
 function fmt(n: number): string {
   if (n >= 1000)  return n.toFixed(2)
@@ -78,6 +79,10 @@ export function detectCrt(
   const poi = validatePoi(candles, direction, sweepLevel)
   if (!pd.valid && !poi.valid) return null
 
+  // Rule 7: Confluence score must be >= 3 out of 10
+  const conf = getConfluence(candles, direction, sweepLevel, c2, new Date(c2.openTime + H4).toISOString())
+  if (conf.score < 3) return null
+
   // HTF bias (info only — not a hard filter)
   const htf = candles.slice(-12, -2)
   let htfBias = 'RANGING'
@@ -127,6 +132,9 @@ export function detectCrt(
     fvgHigh,
     fvgLow,
     pdReasons:   [...pd.reasons, ...poi.reasons],
+    confReasons: conf.reasons,
+    confScore:   conf.score,
+    session:     conf.session,
     htfBias,
     c2Rejected,
     lastPrice:       parseFloat(ticker.lastPrice),
@@ -180,9 +188,15 @@ export function buildAlertMessage(s: CrtSetup): string {
   const htfEmoji = s.htfBias === 'BULLISH' ? '🟢' : s.htfBias === 'BEARISH' ? '🔴' : '🟡'
   const rejEmoji = s.c2Rejected ? '✅' : '⚠️'
 
-  const pdLines  = (s.pdReasons ?? []).map(r => `   • ${r}`)
-  const pdBlock  = pdLines.length > 0
-    ? [``, `━━━ CONFLUENCE ━━━`, ...pdLines]
+  // Confluence score bar
+  const scoreFilled = Math.round((s.confScore ?? 0))
+  const scoreBar    = '🟩'.repeat(scoreFilled) + '⬜'.repeat(10 - scoreFilled)
+  const scoreLabel  = scoreFilled >= 7 ? 'HIGH' : scoreFilled >= 4 ? 'MEDIUM' : 'LOW'
+
+  const pdLines   = (s.pdReasons ?? []).map(r => `   • ${r}`)
+  const confLines = (s.confReasons ?? []).map(r => `   • ${r}`)
+  const pdBlock   = [...pdLines, ...confLines].length > 0
+    ? [``, `━━━ CONFLUENCE ━━━`, `🎯 Score: ${scoreBar} ${scoreFilled}/10 (${scoreLabel})`, ...[...pdLines, ...confLines]]
     : []
 
   const tvLink = `https://www.tradingview.com/chart/?symbol=MEXC:${s.symbol}&interval=240`
@@ -190,6 +204,7 @@ export function buildAlertMessage(s: CrtSetup): string {
   return [
     `🕯️ *CRT — ${s.symbol}*`,
     `${arrow}  ·  4H  ·  MEXC Futures`,
+    `${s.session ?? ''}  ·  Score: ${s.confScore ?? 0}/10`,
     `📊 [Open on TradingView](${tvLink})`,
     ``,
     `━━━ TIMING ━━━`,
