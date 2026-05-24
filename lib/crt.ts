@@ -79,9 +79,9 @@ export function detectCrt(
   const poi = validatePoi(candles, direction, sweepLevel)
   if (!pd.valid && !poi.valid) return null
 
-  // Rule 7: Confluence score must be >= 3 out of 10
+  // Rule 7: Confluence score must be >= 6 out of 10
   const conf = getConfluence(candles, direction, sweepLevel, c2, new Date(c2.openTime + H4).toISOString())
-  if (conf.score < 3) return null
+  if (conf.score < 6) return null
 
   // HTF bias (info only — not a hard filter)
   const htf = candles.slice(-12, -2)
