@@ -156,8 +156,63 @@ export function getConfluence(
     reasons.push(`🕯️ C1 same direction as CRT (weaker setup ⚠️)`)
   }
 
+  // ── 7. DIVERGENCE ───────────────────────────────────────────────────────────
+  // Regular Divergence = price makes new H/L but RSI doesn't → reversal likely
+  // This directly addresses the "signal reverses due to longer holding" problem
+  const rsiValues: number[] = []
+  for (let i = Math.max(0, prior.length - 20); i < prior.length; i++) {
+    rsiValues.push(calcRsi(prior.slice(0, i + 1)))
+  }
+
+  if (rsiValues.length >= 4) {
+    const priceRecent  = prior.slice(-4)
+    const rsiRecent    = rsiValues.slice(-4)
+
+    if (direction === 'BEARISH') {
+      // Regular Bearish Divergence: price made higher high but RSI made lower high
+      const priceHH = priceRecent[priceRecent.length - 1].high > priceRecent[0].high
+      const rsiLH   = rsiRecent[rsiRecent.length - 1] < rsiRecent[0]
+      if (priceHH && rsiLH) {
+        const rsiDiff = (rsiRecent[0] - rsiRecent[rsiRecent.length - 1]).toFixed(1)
+        reasons.push(`📉 Regular Bearish Divergence (RSI -${rsiDiff} pts ✅)`)
+        score += 3   // Strong reversal signal
+      }
+      // Hidden Bearish Divergence: price made lower high but RSI made higher high
+      const priceLH2 = priceRecent[priceRecent.length - 1].high < priceRecent[0].high
+      const rsiHH2   = rsiRecent[rsiRecent.length - 1] > rsiRecent[0]
+      if (priceLH2 && rsiHH2) {
+        reasons.push(`📉 Hidden Bearish Divergence (continuation ⚠️)`)
+        score += 1
+      }
+    }
+
+    if (direction === 'BULLISH') {
+      // Regular Bullish Divergence: price made lower low but RSI made higher low
+      const priceLL = priceRecent[priceRecent.length - 1].low < priceRecent[0].low
+      const rsiHL   = rsiRecent[rsiRecent.length - 1] > rsiRecent[0]
+      if (priceLL && rsiHL) {
+        const rsiDiff = (rsiRecent[rsiRecent.length - 1] - rsiRecent[0]).toFixed(1)
+        reasons.push(`📈 Regular Bullish Divergence (RSI +${rsiDiff} pts ✅)`)
+        score += 3   // Strong reversal signal
+      }
+      // Hidden Bullish Divergence: price made higher low but RSI made lower low
+      const priceHL2 = priceRecent[priceRecent.length - 1].low > priceRecent[0].low
+      const rsiLL2   = rsiRecent[rsiRecent.length - 1] < rsiRecent[0]
+      if (priceHL2 && rsiLL2) {
+        reasons.push(`📈 Hidden Bullish Divergence (continuation ⚠️)`)
+        score += 1
+      }
+    }
+
+    // No divergence — warn that momentum may not support reversal
+    const hasDivergence = reasons.some(r => r.includes('Divergence'))
+    if (!hasDivergence) {
+      reasons.push(`〰️ No Divergence detected (hold with caution ⚠️)`)
+    }
+  }
+
   return {
-    score:   Math.min(score, 10),
+    score:   Math.min(score, 10),   // capped at 10 even though max possible is 13
     reasons,
     session,
   }
